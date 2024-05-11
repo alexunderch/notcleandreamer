@@ -1,0 +1,16 @@
+flax
+chex
+rlax
+optax
+flashbax
+matplotlib
+numpy
+distrax
+pillow
+wandb
+hydra-core
+imageio
+moviepy
+jax-tqdm
+opencv-python
+# jaxmarl

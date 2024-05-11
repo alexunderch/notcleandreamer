@@ -1,0 +1,71 @@
+env_id: Easy8x8
+on_target: restart
+seed: 0
+total_steps: 1.E+6
+train_ratio: 16.
+env_kwargs:
+  max_episode_steps: 1
+
+policy:
+  target_update_period: 1
+  target_update_tau: 0.98
+  
+  normalize_returns: true
+  gamma: 0.997
+  lambda_: 0.95
+  vf_coeff: 1.0
+  ent_coeff: 3.E-4
+  
+  seed: 42
+  logger_freq: 1
+
+  lr: 3.0E-5
+  anneal_lr: true
+
+  max_grad_norm: 100
+
+wm_network:
+  state_dim: 512
+  stoch_discrete_dim: 32
+  num_categories: 32
+  unimix_ratio: 0.01 
+  reset_on_termination: false
+  lstm_seed: 42
+  hidden_dim: 512
+  base_channels: 32
+  base_ff_layers: 2
+  min_res: 33
+  num_discrete_bins: 255
+
+
+policy_network:
+  hidden_dim: 512
+  base_ff_layers: 2
+  unimix_ratio: 0.01 
+  num_discrete_bins: 255
+  use_global_state: false
+
+replay_buffer: 
+  max_length: 2.5E+5
+  min_length: 64
+  sample_batch_size: 16
+  sample_sequence_length: 64
+
+wm:
+  discrete_latent_dim: 32
+  imagination_horizon: 15
+
+  seed: 42
+
+  lr: 1.0E-4
+  max_grad_norm: 1000.
+
+  free_kl: 1.
+  kl_balance_rep: 0.1
+  kl_balance_dyn: 0.5
+
+wandb:
+    name: pogema_benchmark 
+    project: cleanRLDreamer 
+    tags: ['WorldModel', 'baseline', "pogema"]
+    entity: alexunderch
