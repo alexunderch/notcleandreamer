@@ -6,9 +6,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import supersuit as ss
-import wandb
 from omegaconf import DictConfig, OmegaConf
 
+import wandb
 from noncleandreamer.ac import create_ac_dreamer as policy_fn
 from noncleandreamer.custom_types import BaseDataType, Transition
 from noncleandreamer.dreamer import DreamerAgent, create_item_buffer
@@ -46,11 +46,11 @@ class GymEnv(gym.Wrapper):
         else:
             # Step the environment.
             obs, reward, terminated, truncated, info = super().step(action)
-            done = np.maximum(terminated, truncated)
+            done = terminated
             first = False
 
             # Update the statistics.
-            self._done = done
+            self._done = np.maximum(done, truncated)
             self._episode_return += reward
             self._episode_length += 1
 
@@ -66,7 +66,7 @@ def make_gymnasium_env(
     max_episode_steps: int, num_envs: int, frame_stack: int, **env_kwargs: Any
 ):
 
-    env = gym.wrappers.AutoResetWrapper(gym.make("LunarLander-v2"))
+    env = gym.make("LunarLander-v2")
     env = GymEnv(env)
 
     if frame_stack > 1:
@@ -372,9 +372,7 @@ def main(cfg: DictConfig) -> None:
 
     env_steps = 0
     rng = jax.random.key(dict_config["seed"] + 1)
-    rollout_len = dict_config["env_kwargs"]["max_episode_steps"]
-    # rollout_len = env.env.unwrapped.grid_config.max_episode_steps
-    # train_ratio = dict_config["train_ratio"] // rollout_len
+    rollout_len = 1  # dict_config["env_kwargs"]["max_episode_steps"]
     # Train
     for step in range(1, int(dict_config["total_steps"]) + 1):
 
@@ -392,15 +390,7 @@ def main(cfg: DictConfig) -> None:
 
         _, rng = jax.random.split(rng)
 
-        _, train_metric = agent.train(
-            buffer_state,
-            rng,
-            None,
-            step,
-            dict_config["model_epochs"],
-            dict_config["policy_epochs"],
-            dict_config["policy_update_per_epoch"],
-        )
+        _, train_metric = agent.train(buffer_state, rng, None, step)
 
         if (env_steps + 1) % (
             train_ratio * rollout_len

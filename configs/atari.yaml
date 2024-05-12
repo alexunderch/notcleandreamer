@@ -1,6 +1,6 @@
 env_id: PongNoFrameskip-v4
 env_kwargs:
-  max_episode_steps: 1
+  max_episode_steps: 3600
   num_envs: 1
   frame_stack: 1
 

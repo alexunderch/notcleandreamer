@@ -1,4 +1,4 @@
-ROM nvidia/cuda:11.8.0-devel-ubuntu22.04
+FROM nvidia/cuda:11.8.0-devel-ubuntu22.04
 
 # install python
 ARG DEBIAN_FRONTEND=noninteractive
@@ -35,12 +35,13 @@ EXPOSE 9999
 
 # default workdir
 WORKDIR /home/workdir
+ADD ./requirements.txt .
+ADD ./pyproject.toml .
 
-COPY ./requirements.txt .
-
-RUN pip install -r requirements.txt --ignore-installed
-RUN pip install tensorflow[and-cuda]==2.14
-RUN pip install --upgrade jax==0.4.25 jaxlib==0.4.25+cuda11.cudnn86 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+RUN pip install -r requirements.txt --ignore-installed && \
+    pip install tensorflow[and-cuda]==2.14 && \
+    pip install --upgrade jax==0.4.25 jaxlib==0.4.25+cuda11.cudnn86 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html && \
+    pip install -e .
 
 RUN git config --global --add safe.directory /home/workdir
 CMD ["/bin/bash"]

@@ -90,7 +90,7 @@ class DreamerAgent:
         policy_fn: Callable,
         rollout_fn: Callable,
         train_ratio: int,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> None:
 
         # here we take only supervised learning part
@@ -622,7 +622,7 @@ class DreamerAgent:
             actor_grad_norm=jnp.array(optax.global_norm(actor_grads)),
             critic_grad_norm=jnp.array(optax.global_norm(critic_grads)),
         )
-        jax.debug.print("ACTOR GRADS {x}", x=optax.global_norm(actor_grads))
+        # jax.debug.print("ACTOR GRADS {x}", x=optax.global_norm(actor_grads))
 
         loss_info = jax.tree_map(jnp.mean, loss_info)
 
@@ -687,9 +687,6 @@ class DreamerAgent:
         rng,
         rssm_state: RSSMState,
         step: int,
-        model_epochs: int,
-        policy_epochs: int,
-        policy_update_per_epoch: int,
     ) -> Tuple[RSSMState, Tuple[RSSMLossInfo, ACLossInfo]]:
         """Trains the agent."""
         # Train the agent.
@@ -731,7 +728,7 @@ class SupervisedDreamerAgent:
         world_model_fn: Callable,
         rollout_fn: Callable,
         train_ratio: int,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> None:
 
         # here we take only supervised learning part

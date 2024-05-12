@@ -1,6 +1,6 @@
 seed: 0
 total_steps: 2.5E+5
-train_ratio: 1024.
+train_ratio: 256.
 env_kwargs:
   max_episode_steps: 1
   num_envs: 1
@@ -39,7 +39,7 @@ wm_network:
   hidden_dim: 512
   base_channels: 32
   base_ff_layers: 2
-  min_res: 1
+  min_res: 4 
   num_discrete_bins: 255
 
 
