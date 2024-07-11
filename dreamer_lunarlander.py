@@ -50,7 +50,7 @@ class GymEnv(gym.Wrapper):
             first = False
 
             # Update the statistics.
-            self._done = np.maximum(done, truncated)
+            self._done = np.maximum(terminated, truncated)
             self._episode_return += reward
             self._episode_length += 1
 
@@ -319,7 +319,8 @@ def main(cfg: DictConfig) -> None:
             **dict_config["wm"], num_actions=env_specs["action_space"]
         ),
         replay_buffer_config=ReplayBufferConfig(
-            **dict_config["replay_buffer"], add_batch_size=1
+            **dict_config["replay_buffer"],
+            add_batch_size=dict_config["env_kwargs"]["num_envs"],
         ),
         policy_network_config=dict_config["policy_network"],
         wm_network_config=dict_config["wm_network"],

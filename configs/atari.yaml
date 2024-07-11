@@ -1,7 +1,7 @@
 env_id: PongNoFrameskip-v4
 env_kwargs:
   max_episode_steps: 3600
-  num_envs: 1
+  num_envs: 2
   frame_stack: 1
 
 eval: 
@@ -11,7 +11,7 @@ eval:
 
 seed: 0
 total_steps: 4.5E+5
-train_ratio: 1024
+train_ratio: 512.
 
 policy:
 
@@ -33,7 +33,7 @@ policy:
   max_grad_norm: 100
 
 wm_network:
-  state_dim: 512
+  state_dim: 1024
   stoch_discrete_dim: 32
   num_categories: 32
   unimix_ratio: 0.01 
@@ -41,8 +41,8 @@ wm_network:
   lstm_seed: 42
   hidden_dim: 512
   base_channels: 32
-  base_ff_layers: 2
-  min_res: 2
+  base_ff_layers: 3
+  min_res: 4
   num_discrete_bins: 255
 
 
@@ -55,7 +55,7 @@ policy_network:
 
 replay_buffer: 
   max_length: 4.E+5
-  min_length: 1024
+  min_length: 64
   sample_batch_size: 16
   sample_sequence_length: 64
 

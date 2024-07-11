@@ -1,9 +1,9 @@
 seed: 0
 total_steps: 2.5E+5
-train_ratio: 256.
+train_ratio: 512.
 env_kwargs:
   max_episode_steps: 1
-  num_envs: 1
+  num_envs: 2
   frame_stack: 1
 
 eval: 
@@ -19,7 +19,7 @@ policy:
   gamma: 0.997
   lambda_: 0.95
   vf_coeff: 1.0
-  ent_coeff: 3.E-4
+  ent_coeff: 3.E-3
   
   seed: 42
   logger_freq: 1
@@ -30,7 +30,7 @@ policy:
   max_grad_norm: 100
 
 wm_network:
-  state_dim: 512
+  state_dim: 1024
   stoch_discrete_dim: 32
   num_categories: 32
   unimix_ratio: 0.01 
@@ -39,7 +39,7 @@ wm_network:
   hidden_dim: 512
   base_channels: 32
   base_ff_layers: 2
-  min_res: 4 
+  min_res: 1
   num_discrete_bins: 255
 
 
@@ -51,8 +51,8 @@ policy_network:
   use_global_state: false
 
 replay_buffer: 
-  max_length: 1.5E+5
-  min_length: 64
+  max_length: 0.5E+5
+  min_length: 512
   sample_batch_size: 16
   sample_sequence_length: 64
 

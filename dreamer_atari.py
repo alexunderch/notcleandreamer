@@ -51,7 +51,7 @@ class AtariEnv(gym.Wrapper):
             first = False
 
             # Update the statistics.
-            self._done = np.maximum(terminated, truncated)
+            self._done = jnp.maximum(terminated, truncated)
             self._episode_return += reward
             self._episode_length += 1
 
@@ -72,7 +72,6 @@ def make_gymnasium_env(
 ):
 
     env = make(env_name, render_mode="rgb_array", full_action_space=False)
-    env = wrappers.TimeLimit(env, max_episode_steps=max_episode_steps)
     env = AtariEnv(env)
     env = wrappers.AtariPreprocessing(
         env,

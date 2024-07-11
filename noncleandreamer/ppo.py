@@ -16,7 +16,7 @@ from noncleandreamer.custom_types import (
 from noncleandreamer.distributions import Normalizer
 
 
-class ACDreamer(nn.Module):
+class PPODreamer(nn.Module):
 
     actor: nn.Module
     critic: nn.Module
@@ -36,8 +36,8 @@ class ACDreamer(nn.Module):
     ) -> jax.Array:
         targets = rlax.lambda_returns(
             traj_batch.reward.astype(jnp.float32),
-            gamma * (1.0 - traj_batch.termination[1:]),
-            values[1:],
+            gamma * (1.0 - traj_batch.termination[:-1]),
+            values,
             lambda_,
         )
         return targets
@@ -66,21 +66,19 @@ class ACDreamer(nn.Module):
     def compute_advantages(self, traj_batch: Transition) -> Tuple[jax.Array, jax.Array]:
 
         values = self.value(traj_batch.observation, None, None).value.mean()
-        unnormalised_targets = self._calculate_targets(
-            traj_batch, values, self.config.gamma, self.config.lambda_
-        )
         values = values[:-1]
 
-        if self.config.normalize_returns:
-            offset, inv_scale = self.normalizer(unnormalised_targets)
-            targets = (unnormalised_targets - offset) / inv_scale
-            values = (values - offset) / inv_scale
-        else:
-            targets = unnormalised_targets
+        targets = self._calculate_targets(
+            traj_batch, values, self.config.gamma, self.config.lambda_
+        )
 
         advantages = targets - values
 
-        return advantages, unnormalised_targets
+        if self.config.normalize_returns:
+            _, inv_scale = self.normalizer(targets)
+            advantages = (targets - values) / inv_scale
+
+        return advantages, targets
 
     def _actor_loss_fn(
         self,
@@ -98,6 +96,32 @@ class ACDreamer(nn.Module):
         )
         actor_output = self.actor(traj_obs, all_but_last(traj_batch.action))
         log_prob = actor_output.log_prob
+
+        # logratio = log_prob - all_but_last(traj_batch.log_prob)
+        #                 ratio = jnp.exp(logratio)
+        #                 gae = (gae - gae.mean()) / (gae.std() + 1e-8)
+        #                 loss_actor1 = ratio * gae
+        #                 loss_actor2 = (
+        #                     jnp.clip(
+        #                         ratio,
+        #                         1.0 - config["CLIP_EPS"],
+        #                         1.0 + config["CLIP_EPS"],
+        #                     )
+        #                     * gae
+        #                 )
+        #                 loss_actor = -jnp.minimum(loss_actor1, loss_actor2)
+        #                 loss_actor = loss_actor.mean()
+        #                 entropy = pi.entropy().mean()
+
+        #                 # debug
+        #                 approx_kl = ((ratio - 1) - logratio).mean()
+        #                 clip_frac = jnp.mean(jnp.abs(ratio - 1) > config["CLIP_EPS"])
+
+        #                 total_loss = (
+        #                     loss_actor
+        #                     + config["VF_COEF"] * value_loss
+        #                     - config["ENT_COEF"] * entropy
+        #                 )
 
         loss_actor = -log_prob * jax.lax.stop_gradient(gae)
         entropy = actor_output.entropy
@@ -129,6 +153,15 @@ class ACDreamer(nn.Module):
 
         values = self.critic(all_but_last(traj_obs)).value
         slow_values = self.slow_critic(all_but_last(traj_obs)).value.mean()
+
+        #  value_pred_clipped = traj_batch.value + (
+        #     value - traj_batch.value
+        # ).clip(-config["CLIP_EPS"], config["CLIP_EPS"])
+        # value_losses = jnp.square(value - targets)
+        # value_losses_clipped = jnp.square(value_pred_clipped - targets)
+        # value_loss = 0.5 * jnp.maximum(
+        #     value_losses, value_losses_clipped
+        # ).mean()
 
         # CALCULATE VALUE LOSS
         value_loss = -values.log_prob(jax.lax.stop_gradient(targets))
@@ -187,7 +220,7 @@ def create_ac_dreamer(
 ) -> Callable:
 
     def call():
-        return ACDreamer(
+        return PPODreamer(
             actor=actor, critic=critic, slow_critic=slow_critic, config=config
         )
 

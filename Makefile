@@ -1,6 +1,6 @@
 NVIDIA_SMI_TEST := $(shell nvidia-smi -L >> gpus.txt; wc -l < gpus.txt; rm gpus.txt)
 ifneq ($(NVIDIA_SMI_TEST), 0)
-GPUS=--gpus all
+GPUS=#--gpus all
 else
 GPUS=
 endif
@@ -17,7 +17,6 @@ USE_CUDA = $(if $(GPUS),true,false)
 # make file commands
 build:
 	DOCKER_BUILDKIT=1 docker build --build-arg USE_CUDA=$(USE_CUDA) --tag $(IMAGE) --progress=plain ${PWD}/.
-
 run:
 	$(DOCKER_RUN) /bin/bash 
 

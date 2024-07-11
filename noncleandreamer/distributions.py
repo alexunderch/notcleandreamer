@@ -166,9 +166,7 @@ class MSE(distrax.Distribution):
     def log_prob(self, value: jax.Array) -> jax.Array:
         """Calculates the log probability."""
         # Calculate the negative MSE.
-        log_prob = jnp.square(self._loc - self.trans(value))
-        limits = jnp.finfo(jnp.float16)
-        return -jnp.clip(log_prob, limits.min, limits.max)
+        return -jnp.square(self._loc - self.trans(value))
 
 
 class Normalizer(nn.Module):

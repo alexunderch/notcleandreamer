@@ -27,7 +27,7 @@ def create_item_buffer(
     add_batch_size: int,
     sample_batch_size: int,
     sample_sequence_length: int,
-) -> fbx.item_buffer.TrajectoryBuffer:
+) -> fbx.trajectory_buffer.TrajectoryBuffer:
     return fbx.make_trajectory_buffer(
         max_length_time_axis=int(max_length),
         min_length_time_axis=min_length,
@@ -163,8 +163,15 @@ class DreamerAgent:
         params = variables["params"]
 
         tx = optax.chain(
+            optax.scale_by_rms(0.999, 1e-8),
             optax.clip_by_global_norm(config.world_model_config.max_grad_norm),
-            optax.adam(learning_rate=config.world_model_config.lr, eps=1e-8),
+            optax.adam(
+                learning_rate=optax.linear_schedule(
+                    config.policy_config.lr / 1000, config.policy_config.lr, 1000
+                ),
+                eps=1e-8,
+                # nesterov=True,
+            ),
         )
         dynamic_scale = DynamicScale()
 
@@ -186,7 +193,7 @@ class DreamerAgent:
         traj = Transition(
             **{
                 "state": None,
-                "observation": jnp.zeros((2, config.latent_dim), jnp.float16),
+                "observation": jnp.zeros((2, config.latent_dim), jnp.float32),
                 "action": jnp.zeros((2, self.env_specs["action_space"]), jnp.float32),
                 "reward": jnp.zeros((1,), jnp.float32),
                 "termination": jnp.zeros((2,), jnp.uint8),
@@ -199,9 +206,28 @@ class DreamerAgent:
         )
         actor_variables = self.agent.init(rngs, traj, adv, method=self.agent.actor_loss)
 
-        tx_actor = tx_critic = optax.chain(
+        tx_actor = optax.chain(
             optax.clip_by_global_norm(config.policy_config.max_grad_norm),
-            optax.adam(learning_rate=config.policy_config.lr, eps=1e-5),
+            optax.scale_by_rms(0.999, 1e-5),
+            optax.adam(
+                learning_rate=optax.linear_schedule(
+                    config.policy_config.lr / 100, config.policy_config.lr, 1000
+                ),
+                eps=1e-5,
+                nesterov=True,
+            ),
+        )
+
+        tx_critic = optax.chain(
+            optax.clip_by_global_norm(config.policy_config.max_grad_norm),
+            optax.scale_by_rms(0.999, 1e-5),
+            optax.adam(
+                learning_rate=optax.linear_schedule(
+                    config.policy_config.lr / 100, config.policy_config.lr, 1000
+                ),
+                eps=1e-5,
+                nesterov=True,
+            ),
         )
         actor_dynamic_scale, critic_dynamic_scale = DynamicScale(), DynamicScale()
 

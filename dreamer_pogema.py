@@ -7,10 +7,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pogema
-import wandb
 from omegaconf import DictConfig, OmegaConf
-from tqdm.auto import tqdm
 
+import wandb
 from noncleandreamer.ac import create_ac_dreamer as policy_fn
 from noncleandreamer.custom_types import BaseDataType, Transition
 from noncleandreamer.dreamer import DreamerAgent, create_item_buffer
@@ -22,8 +21,9 @@ from noncleandreamer.networks import (
 
 class PogemaEnv:
 
-    def __init__(self, env) -> None:
+    def __init__(self, env, on_target: str) -> None:
         self.env = env
+        self.on_target = on_target
         self.num_agents = env.unwrapped.get_num_agents()
         self._done: bool = True
         self._episode_return = jnp.zeros((self.num_agents,))
@@ -39,12 +39,10 @@ class PogemaEnv:
             reward = [0.0 for _ in range(self.num_agents)]
             done = [False for _ in range(self.num_agents)]
             first = True
-
             # Update the statistics.
             self._done = np.all(done)
             self._episode_return = jnp.zeros((self.num_agents,))
             self._episode_length = jnp.zeros((self.num_agents,), dtype=jnp.uint32)
-
         else:
             # Step the environment.
             obs, reward, terminated, truncated, info = self.env.step(action)
@@ -52,11 +50,11 @@ class PogemaEnv:
             first = False
 
             # Update the statistics.
-            self._done = np.all(done)
+            self._done = all(np.maximum(terminated, truncated))
             self._episode_return += jnp.array(reward)
             self._episode_length += 1
             # Return the episode return and length.
-            for _ind, _done in enumerate(done):
+            for _ind, _done in enumerate(np.maximum(terminated, truncated)):
                 if _done:
                     if "metrics" not in info[0]:
                         info[0]["metrics"] = {}
@@ -72,6 +70,7 @@ class PogemaEnv:
 
 
 def make_pogema_env(env_name, **config_kwargs):
+    on_target = config_kwargs.get("on_target", "restart")
     str2env = {
         "Easy8x8": pogema.Easy8x8,
         "Normal8x8": pogema.Normal8x8,
@@ -90,7 +89,9 @@ def make_pogema_env(env_name, **config_kwargs):
         "Hard64x64": pogema.Hard64x64,
         "ExtraHard64x64": pogema.ExtraHard64x64,
     }
-    return PogemaEnv(pogema.pogema_v0(grid_config=str2env[env_name](**config_kwargs)))
+    return PogemaEnv(
+        pogema.pogema_v0(grid_config=str2env[env_name](**config_kwargs)), on_target
+    )
 
 
 class WMConfig(BaseDataType):
@@ -164,9 +165,7 @@ def make_pogema_step_fn(
 
         observation, reward, done, first, info, action = data
 
-        for _ in tqdm(
-            range(rollout_len), total=rollout_len, postfix="Collecting a rollout"
-        ):
+        for _ in range(rollout_len):
             observation = jnp.array(observation)
             observations.append(
                 transform(observation).reshape(
@@ -362,15 +361,7 @@ def main(cfg: DictConfig) -> None:
 
         _, rng = jax.random.split(rng)
 
-        _, train_metric = agent.train(
-            buffer_state,
-            rng,
-            None,
-            step,
-            dict_config["model_epochs"],
-            dict_config["policy_epochs"],
-            dict_config["policy_update_per_epoch"],
-        )
+        _, train_metric = agent.train(buffer_state, rng, None, step)
 
         if (env_steps + 1) % (
             train_ratio * rollout_len

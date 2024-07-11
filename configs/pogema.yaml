@@ -2,7 +2,7 @@ env_id: Easy8x8
 on_target: restart
 seed: 0
 total_steps: 1.E+6
-train_ratio: 16.
+train_ratio: 256.
 env_kwargs:
   max_episode_steps: 1
 
@@ -34,7 +34,7 @@ wm_network:
   hidden_dim: 512
   base_channels: 32
   base_ff_layers: 2
-  min_res: 33
+  min_res: 121
   num_discrete_bins: 255
 
 

@@ -70,13 +70,13 @@ class FeedForwardCritic(nn.Module):
     def __call__(self, x: Observation) -> CriticOutput:
 
         latent_repr = self.representation_fn()(
-            x.agent_observation.astype(jnp.float16)
-            if not self.use_global_state
-            else x.global_observation
+            x.agent_observation if not self.use_global_state else x.global_observation
         )
-        critic_value = self.critic_fn()(latent_repr).astype(jnp.float32)
+        critic_value = self.critic_fn()(latent_repr)
 
-        return CriticOutput(None, Discrete(critic_value))
+        return CriticOutput(
+            None, Discrete(critic_value, use_symlog=True)
+        )  # TODO: critic explodes
 
 
 def create_discrete_lin_ppo_policy(
@@ -88,25 +88,25 @@ def create_discrete_lin_ppo_policy(
     use_global_state: bool,
 ):
     representation_fn = linear_encoder_model(
-        hidden_dims=[hidden_dim] * base_ff_layers,
-        initializer=initializers.orthogonal(jnp.sqrt(2)),
+        hidden_dims=[hidden_dim] * (base_ff_layers - 1),
+        initializer=initializers.orthogonal(jnp.sqrt(1.0)),
         activation_fn=nn.silu,
         precision=Precision("default"),
     )
 
     actor_fn = head_fn(
-        hidden_dims=[hidden_dim],
+        hidden_dims=[],
         output_dim=action_space_dim,
-        initializer=initializers.orthogonal(jnp.sqrt(2)),
+        initializer=initializers.orthogonal(jnp.sqrt(1.0)),
         activation_fn=nn.silu,
         precision=Precision("default"),
     )
 
     critic_fn = head_fn(
-        hidden_dims=[hidden_dim],
+        hidden_dims=[],
         output_dim=num_discrete_bins,
         initializer=initializers.variance_scaling(
-            0.001, mode="fan_avg", distribution="truncated_normal"
+            0.0, mode="fan_avg", distribution="truncated_normal"
         ),
         activation_fn=nn.silu,
         precision=Precision("default"),
@@ -171,7 +171,7 @@ def create_conv_rssm_model(
     )
 
     prior_latent_repr_enc = head_fn(
-        hidden_dims=[hidden_dim] * 0,
+        hidden_dims=[hidden_dim] * base_ff_layers,
         output_dim=hidden_dim,
         initializer=initializers.xavier_normal(),
         activation_fn=nn.silu,
@@ -180,7 +180,7 @@ def create_conv_rssm_model(
     )
 
     rssm_proj = head_fn(
-        hidden_dims=[hidden_dim],
+        hidden_dims=[],
         output_dim=num_categories * stoch_discrete_dim,
         initializer=initializers.xavier_normal(),
         activation_fn=nn.silu,
@@ -189,7 +189,7 @@ def create_conv_rssm_model(
     )
 
     posterior_latent_repr_enc = latent_repr_fn2(
-        hidden_dims=[hidden_dim] * 1,
+        hidden_dims=[hidden_dim] * base_ff_layers,
         initializer=initializers.xavier_normal(),
         activation_fn=nn.silu,
         precision=Precision("default"),
@@ -197,7 +197,7 @@ def create_conv_rssm_model(
     )
 
     prior_decoder_fn = head_fn(
-        hidden_dims=[hidden_dim] * 0,
+        hidden_dims=[hidden_dim] * base_ff_layers,
         output_dim=hidden_dim,
         initializer=initializers.xavier_normal(),
         activation_fn=None,
@@ -206,7 +206,7 @@ def create_conv_rssm_model(
     )
 
     posterior_decoder_fn = head_fn(
-        hidden_dims=[hidden_dim] * 0,
+        hidden_dims=[hidden_dim] * base_ff_layers,
         output_dim=stoch_discrete_dim * stoch_discrete_dim,
         initializer=initializers.xavier_normal(),
         activation_fn=None,
@@ -215,16 +215,16 @@ def create_conv_rssm_model(
     )
 
     reward_decoder_fn = head_fn(
-        hidden_dims=[hidden_dim] * (base_ff_layers - 1),
+        hidden_dims=[],
         output_dim=num_discrete_bins,
-        initializer=initializers.variance_scaling(0.001, "fan_avg", "truncated_normal"),
+        initializer=initializers.variance_scaling(0.0, "fan_avg", "truncated_normal"),
         activation_fn=nn.silu,
         precision=Precision("default"),
         name="rew",
     )
 
     terminal_decoder_fn = head_fn(
-        hidden_dims=[hidden_dim] * (base_ff_layers - 1),
+        hidden_dims=[],
         output_dim=1,
         initializer=initializers.xavier_normal(),
         activation_fn=nn.silu,
@@ -233,7 +233,7 @@ def create_conv_rssm_model(
     )
 
     ind_action_decoder_fn = head_fn(
-        hidden_dims=[hidden_dim] * (base_ff_layers - 1),
+        hidden_dims=[],
         output_dim=action_space_dim,
         initializer=initializers.xavier_normal(),
         activation_fn=nn.silu,
@@ -342,7 +342,7 @@ def create_lin_rssm_model(
     )
 
     rssm_proj = head_fn(
-        hidden_dims=[hidden_dim] * (base_ff_layers - 1),
+        hidden_dims=[],
         output_dim=stoch_discrete_dim * stoch_discrete_dim,
         initializer=initializers.xavier_normal(),
         activation_fn=nn.silu,
@@ -358,16 +358,16 @@ def create_lin_rssm_model(
     )
 
     reward_decoder_fn = head_fn(
-        hidden_dims=[hidden_dim] * (base_ff_layers - 1),
+        hidden_dims=[],
         output_dim=num_discrete_bins,
-        initializer=initializers.variance_scaling(0.001, "fan_avg", "truncated_normal"),
+        initializer=initializers.variance_scaling(0.0, "fan_avg", "truncated_normal"),
         activation_fn=nn.silu,
         precision=Precision("default"),
         name="rew",
     )
 
     terminal_decoder_fn = head_fn(
-        hidden_dims=[hidden_dim] * (base_ff_layers - 1),
+        hidden_dims=[],
         output_dim=1,
         initializer=initializers.xavier_normal(),
         activation_fn=nn.silu,
@@ -376,7 +376,7 @@ def create_lin_rssm_model(
     )
 
     ind_action_decoder_fn = head_fn(
-        hidden_dims=[hidden_dim] * (base_ff_layers - 1),
+        hidden_dims=[],
         output_dim=action_space_dim,
         initializer=initializers.xavier_normal(),
         activation_fn=nn.silu,

@@ -8,6 +8,7 @@ from flax.training.dynamic_scale import DynamicScale
 from flax.training.train_state import TrainState as FlaxTrainState
 
 BaseDataType = NamedTuple
+base_jnp_type = jnp.float16
 
 
 class RSSMState(BaseDataType):
