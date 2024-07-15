@@ -5,6 +5,9 @@ import flax.linen as nn
 import jax
 import jax.numpy as jnp
 
+"""
+Adopted (almost 100% copied) from https://github.com/symoon11/dreamerv3-flax
+"""
 
 class Discrete(distrax.Categorical):
     """Discrete distribution."""

@@ -1,13 +1,11 @@
-import functools
 import math
-from typing import Any, Callable, List, Tuple
+from typing import Any, Callable, Tuple
 
-import distrax
 import flax.linen as nn
-import jax
 import jax.numpy as jnp
 from flax.linen import initializers
 from jax.lax import Precision
+from noncleandreamer.custom_types import base_jnp_type
 
 """
 Developers note: these nn declarations were done in hurry, so better to be reworked.
@@ -20,19 +18,19 @@ class LinReprBlock(nn.Module):
     act_fn: Callable
     initializer: initializers.Initializer
     precision: Any
-    norm_type: str = "layer"
+    layer_norm: bool = False
 
     @nn.compact
     def __call__(self, inputs: jnp.ndarray) -> jnp.ndarray:
         x = nn.Dense(
             self.hidden_dim,
             kernel_init=self.initializer,
-            use_bias=self.norm_type is None,
+            use_bias=self.layer_norm,
             precision=Precision(self.precision),
-            dtype=jnp.float16,
+            dtype=base_jnp_type,
         )(inputs)
-        if self.norm_type is not None:
-            x = nn.LayerNorm(dtype=jnp.float16)(x)
+        if self.layer_norm:
+            x = nn.LayerNorm(dtype=base_jnp_type)(x)
         if self.act_fn is not None:
             x = self.act_fn(x)
         return x
@@ -43,7 +41,7 @@ class ConvReprBlock(nn.Module):
     act_fn: Callable
     initializer: initializers.Initializer
     precision: Any
-    norm_type: str = "layer"
+    layer_norm: bool = False
 
     @nn.compact
     def __call__(self, inputs: jnp.ndarray) -> jnp.ndarray:
@@ -53,12 +51,12 @@ class ConvReprBlock(nn.Module):
             strides=(2, 2),
             padding="SAME",
             kernel_init=self.initializer,
-            use_bias=self.norm_type is None,
+            use_bias=self.layer_norm,
             precision=None,
-            dtype=jnp.float16,
+            dtype=base_jnp_type,
         )(inputs)
-        if self.norm_type is not None:
-            x = nn.LayerNorm(dtype=jnp.float16)(x)
+        if self.layer_norm:
+            x = nn.LayerNorm(dtype=base_jnp_type)(x)
         if self.act_fn is not None:
             x = self.act_fn(x)
         return x
@@ -69,7 +67,7 @@ class ConvTransposeReprBlock(nn.Module):
     act_fn: Callable
     initializer: initializers.Initializer
     precision: Any
-    norm_type: str = "layer"
+    layer_norm: bool = False
 
     @nn.compact
     def __call__(self, inputs: jnp.ndarray) -> jnp.ndarray:
@@ -80,13 +78,13 @@ class ConvTransposeReprBlock(nn.Module):
             strides=(2, 2),
             padding="SAME",
             kernel_init=self.initializer,
-            use_bias=self.norm_type is None,
+            use_bias=self.layer_norm,
             precision=None,
-            dtype=jnp.float16,
+            dtype=base_jnp_type,
         )(inputs)
 
-        if self.norm_type is not None:
-            x = nn.LayerNorm(dtype=jnp.float16)(x)
+        if self.layer_norm:
+            x = nn.LayerNorm(dtype=base_jnp_type)(x)
         if self.act_fn is not None:
             x = self.act_fn(x)
         return x
@@ -146,6 +144,7 @@ def linear_decoder_model(
                     initializer=initializer,
                     precision=precision,
                     name=f"ReprLinearEncoder_{name}{i}",
+                    layer_norm=True,
                 )
                 for i, (hs) in enumerate(hidden_dims)
             ]
@@ -176,6 +175,7 @@ def conv_encoder_model(
                     initializer=initializer,
                     precision=precision,
                     name=f"ReprConvEncoder_{i}",
+                    layer_norm=True,
                 )
                 for i, hs in enumerate(hidden_dims)
             ]
@@ -212,7 +212,7 @@ def conv_decoder_model(
                 LinReprBlock(
                     math.prod(in_shape),
                     act_fn=None,
-                    norm_type=None,
+                    layer_norm=False,
                     initializer=initializer,
                     precision=precision,
                     name="ReprReshape",
@@ -226,7 +226,7 @@ def conv_decoder_model(
                     initializer=initializer,
                     precision=precision,
                     name=f"ReprConvDecoder_{i}",
-                    norm_type=None if last_layer(i) else "layer",
+                    layer_norm= not last_layer(i),
                 )
                 for i, hs in enumerate(hidden_dims)
             ]
@@ -258,7 +258,7 @@ def latent_repr_fn(
                 LinReprBlock(
                     int(hs),
                     act_fn=None if last_layer(i) else activation_fn,
-                    norm_type=None if last_layer(i) else "layer",
+                    layer_norm= not last_layer(i),
                     initializer=initializer,
                     precision=precision,
                     name=f"LatentEnc_{name}{i}",
@@ -296,7 +296,7 @@ def latent_repr_fn2(
                 LinReprBlock(
                     int(hs),
                     act_fn=None if last_layer(i) else activation_fn,
-                    norm_type=None if last_layer(i) else "layer",
+                    layer_norm= not last_layer(i),
                     initializer=initializer,
                     precision=precision,
                     name=f"ReprLinearEncoder_{name}{i}",
@@ -315,7 +315,7 @@ def head_fn(
     activation_fn: Callable,
     precision: Precision,
     name: str = None,
-    norm_type: str = None,
+    layer_norm: bool = True
 ) -> Callable:
 
     if name is not None:
@@ -333,7 +333,7 @@ def head_fn(
                     initializer=initializer,
                     precision=precision,
                     name=f"Head_{name}{i}",
-                    norm_type=norm_type,
+                    layer_norm=layer_norm,
                 )
                 for i, (hs) in enumerate(hidden_dims)
             ]
@@ -344,9 +344,8 @@ def head_fn(
                     kernel_init=initializer,
                     name=module_name,
                     use_bias=False,
-                    dtype=jnp.float16,
+                    dtype=base_jnp_type,
                 ),
-                # nn.LayerNorm(dtype=jnp.float16) if norm_type is not None else lambda x: x
             ]
         )
 

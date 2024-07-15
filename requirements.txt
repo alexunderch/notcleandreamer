@@ -16,4 +16,5 @@ opencv-python
 # jaxmarl
 supersuit
 pettingzoo
+numpy==1.26.4
 ml-dtypes==0.2.0

@@ -51,7 +51,7 @@ policy_network:
   use_global_state: false
 
 replay_buffer: 
-  max_length: 0.5E+5
+  max_length: 1.5E+5
   min_length: 512
   sample_batch_size: 16
   sample_sequence_length: 64

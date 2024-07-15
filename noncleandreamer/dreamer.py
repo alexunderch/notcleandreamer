@@ -166,9 +166,7 @@ class DreamerAgent:
             optax.scale_by_rms(0.999, 1e-8),
             optax.clip_by_global_norm(config.world_model_config.max_grad_norm),
             optax.adam(
-                learning_rate=optax.linear_schedule(
-                    config.policy_config.lr / 1000, config.policy_config.lr, 1000
-                ),
+                learning_rate=config.policy_config.lr,
                 eps=1e-8,
                 # nesterov=True,
             ),
@@ -202,7 +200,7 @@ class DreamerAgent:
         )
         adv = jnp.zeros((1,), jnp.float32)
         critic_variables = self.agent.init(
-            rngs, traj, adv, method=self.agent.critic_loss
+            rngs, traj, adv, adv, method=self.agent.critic_loss
         )
         actor_variables = self.agent.init(rngs, traj, adv, method=self.agent.actor_loss)
 
@@ -210,11 +208,9 @@ class DreamerAgent:
             optax.clip_by_global_norm(config.policy_config.max_grad_norm),
             optax.scale_by_rms(0.999, 1e-5),
             optax.adam(
-                learning_rate=optax.linear_schedule(
-                    config.policy_config.lr / 100, config.policy_config.lr, 1000
-                ),
+                learning_rate=config.policy_config.lr,
                 eps=1e-5,
-                nesterov=True,
+                # nesterov=True,
             ),
         )
 
@@ -222,11 +218,9 @@ class DreamerAgent:
             optax.clip_by_global_norm(config.policy_config.max_grad_norm),
             optax.scale_by_rms(0.999, 1e-5),
             optax.adam(
-                learning_rate=optax.linear_schedule(
-                    config.policy_config.lr / 100, config.policy_config.lr, 1000
-                ),
+                learning_rate=config.policy_config.lr,
                 eps=1e-5,
-                nesterov=True,
+                # nesterov=True,
             ),
         )
         actor_dynamic_scale, critic_dynamic_scale = DynamicScale(), DynamicScale()
@@ -388,7 +382,7 @@ class DreamerAgent:
         traj = self._imagine(agent, variables, rngs, posterior, termination)
         # Update the key.
         self.key = key
-        # self.policy_state = (actor_state, critic_state)
+        self.policy_state = (actor_state, critic_state)
 
         return traj
 
@@ -509,8 +503,8 @@ class DreamerAgent:
         num_envs, num_agents = traj.action[0].shape[:2]
         actor_state, critic_state = policy_state
 
-        @functools.partial(jax.vmap, in_axes=(None, 2), out_axes=((2, 2), 1))
-        @functools.partial(jax.vmap, in_axes=(None, 1), out_axes=((1, 1), 0))
+        @functools.partial(jax.vmap, in_axes=(None, 2), out_axes=((2, 2, 2), 1))
+        @functools.partial(jax.vmap, in_axes=(None, 1), out_axes=((1, 1, 1), 0))
         def _get_advantages(params: FrozenDict, traj: Transition):
             variables = {"params": params, "aux": critic_state.aux}
 
@@ -522,36 +516,37 @@ class DreamerAgent:
             )
 
         # Update the policy parameters.
-        def critic_loss_fn(params: FrozenDict, traj: Transition, targets: jax.Array):
+        def critic_loss_fn(params: FrozenDict, traj: Transition, traj_values: jax.Array, targets: jax.Array):
             variables = {"params": params, "aux": critic_state.aux}
 
-            @functools.partial(jax.vmap, in_axes=(None, 2, 2), out_axes=1)
-            @functools.partial(jax.vmap, in_axes=(None, 1, 1), out_axes=0)
+            @functools.partial(jax.vmap, in_axes=(None, 2, 2, 2), out_axes=1)
+            @functools.partial(jax.vmap, in_axes=(None, 1, 1, 1), out_axes=0)
             def critic_apply_fn(
-                variables: FrozenDict, traj: Transition, targets: jax.Array
+                variables: FrozenDict, traj: Transition, traj_values: jax.Array, targets: jax.Array
             ):
                 # print(jax.tree_map(lambda x: x.shape, variables["aux"]))
                 return critic_state.apply_fn(
                     variables,
                     traj,
+                    traj_values,
                     targets,
                     mutable="aux",
                 )
 
             (critic_loss, critic_metric), aux = critic_apply_fn(
-                variables, traj, targets
+                variables, traj, traj_values, targets
             )
 
             return critic_loss.mean(), (critic_metric, aux)
 
-        (advantages, targets), aux = _get_advantages(critic_state.params, traj)
+        (advantages, traj_values, targets), aux = _get_advantages(critic_state.params, traj)
         critic_state = critic_state.replace(aux=jax.tree_map(jnp.mean, aux["aux"]))
 
         critic_grad_fn = critic_state.dynamic_scale.value_and_grad(
             critic_loss_fn, has_aux=True
         )
         critic_dynamic_scale, critic_finite, critic_aux, critic_grads = critic_grad_fn(
-            critic_state.params, traj, targets
+            critic_state.params, traj, traj_values, targets
         )
         critic_loss, (critic_metric, critic_variables) = critic_aux
 
@@ -729,7 +724,7 @@ class DreamerAgent:
 
                 posterior, rssm_state, model_metric = self.train_model(data, rssm_state)
 
-                flatten = lambda x: jax.tree_map(
+                flatten = lambda x: jax.tree_map(  # noqa: E731
                     lambda y: y.reshape(-1, *y.shape[2:]), x
                 )
                 traj = self.imagine(flatten(posterior), flatten(data.termination))
@@ -1092,9 +1087,6 @@ class SupervisedDreamerAgent:
                 data = jax.device_put(data, jax.local_devices()[0])
                 posterior, rssm_state, model_metric = self.train_model(data, rssm_state)
 
-                flatten = lambda x: jax.tree_map(
-                    lambda y: y.reshape(-1, *y.shape[2:]), x
-                )
                 # Define the train metric.
                 train_metric = (model_metric,)
 

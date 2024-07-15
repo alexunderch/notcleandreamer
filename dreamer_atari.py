@@ -163,9 +163,9 @@ def make_atati_step_fn(
         rewards = []
         firsts = []
         metrics = {"episode_return": [], "episode_length": []}
-        transform = lambda x: x.reshape(
+        transform = lambda x: x.reshape( # noqa: E731
             config.num_envs, config.num_agents, *x.shape[1:]
-        )  # noqa: E731
+        )  
 
         observation, reward, done, first, info, action = data
 

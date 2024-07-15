@@ -25,7 +25,8 @@ class ACDreamer(nn.Module):
     config: BaseDataType
 
     def setup(self) -> None:
-
+        self.all_but_last = lambda x: jax.tree_map(lambda y: y[:-1], x)  # noqa: E731
+        
         self.counter = self.variable("aux", "counter", jnp.zeros, (), jnp.float32)
         self.normalizer = Normalizer(decay=0.99, max_scale=1.0, q_low=5.0, q_high=95.0)
 
@@ -37,7 +38,7 @@ class ACDreamer(nn.Module):
         targets = rlax.lambda_returns(
             traj_batch.reward.astype(jnp.float32),
             gamma * (1.0 - traj_batch.termination[1:]),
-            values[1:],
+            values,
             lambda_,
         )
         return targets
@@ -67,20 +68,21 @@ class ACDreamer(nn.Module):
 
         values = self.value(traj_batch.observation, None, None).value.mean()
         unnormalised_targets = self._calculate_targets(
-            traj_batch, values, self.config.gamma, self.config.lambda_
+            traj_batch, values[1:], self.config.gamma, self.config.lambda_
         )
-        values = values[:-1]
+        unnormalised_values = values[:-1]
 
         if self.config.normalize_returns:
             offset, inv_scale = self.normalizer(unnormalised_targets)
             targets = (unnormalised_targets - offset) / inv_scale
-            values = (values - offset) / inv_scale
+            values = (unnormalised_values - offset) / inv_scale
         else:
             targets = unnormalised_targets
+            values = unnormalised_values
 
         advantages = targets - values
 
-        return advantages, unnormalised_targets
+        return advantages, unnormalised_values, unnormalised_targets
 
     def _actor_loss_fn(
         self,
@@ -88,21 +90,23 @@ class ACDreamer(nn.Module):
         gae: jax.Array,
     ) -> Tuple:
         """Calculate the actor loss."""
-        all_but_last = lambda x: jax.tree_map(lambda y: y[:-1], x)  # noqa: E731
 
         traj_obs = Observation(
-            all_but_last(traj_batch.observation),
-            all_but_last(traj_batch.state),
+            self.all_but_last(traj_batch.observation),
+            self.all_but_last(traj_batch.state),
             None,
-            all_but_last(traj_batch.action_mask),
+            self.all_but_last(traj_batch.action_mask),
         )
-        actor_output = self.actor(traj_obs, all_but_last(traj_batch.action))
+        actor_output = self.actor(traj_obs, self.all_but_last(traj_batch.action))
         log_prob = actor_output.log_prob
+
+        gae = (gae - gae.mean())/ (gae.std() + 1e-8)
+
 
         loss_actor = -log_prob * jax.lax.stop_gradient(gae)
         entropy = actor_output.entropy
         weight = self.get_weight(
-            all_but_last(1 - traj_batch.termination), self.config.gamma
+            self.all_but_last(1 - traj_batch.termination), self.config.gamma
         )
         total_loss_actor = weight * (loss_actor - self.config.ent_coeff * entropy)
 
@@ -123,30 +127,35 @@ class ACDreamer(nn.Module):
         targets: jax.Array,
     ) -> Tuple:
 
-        all_but_last = lambda x: jax.tree_map(lambda y: y[:-1], x)  # noqa: E731
-
         traj_obs = Observation(traj_batch.observation, traj_batch.state, None, None)
 
-        values = self.critic(all_but_last(traj_obs)).value
-        slow_values = self.slow_critic(all_but_last(traj_obs)).value.mean()
+        values = self.critic(self.all_but_last(traj_obs)).value
+        slow_values = self.slow_critic(self.all_but_last(traj_obs)).value.mean()
+
+
+        values = (values - values.mean())/ (values.std() + 1e-8)
+        slow_values = (slow_values - slow_values.mean())/ (slow_values.std() + 1e-8)
+        targets = (targets - targets.mean())/ (targets.std() + 1e-8)
 
         # CALCULATE VALUE LOSS
         value_loss = -values.log_prob(jax.lax.stop_gradient(targets))
         reg = -values.log_prob(jax.lax.stop_gradient(slow_values))
 
         weight = self.get_weight(
-            1 - all_but_last(traj_batch.termination), self.config.gamma
+            1 - self.all_but_last(traj_batch.termination), self.config.gamma
         )
         critic_total_loss = weight * (value_loss + self.config.vf_coeff * reg)
         return critic_total_loss.mean(), (value_loss.mean(),)
 
+
     def critic_loss(
-        self, traj_batch: Transition, targets: jax.Array
+        self, traj_batch: Transition, traj_values: jax.Array, targets: jax.Array
     ) -> Tuple[jax.Array, Tuple]:
 
         # Calculate the critic loss.
         critic_loss, critic_metric = self._critic_loss_fn(traj_batch, targets)
         return critic_loss, critic_metric
+
 
     def actor_loss(
         self, traj_batch: Transition, advantages: jax.Array

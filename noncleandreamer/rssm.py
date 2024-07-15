@@ -1,17 +1,17 @@
 """
- RSSM equations
- 
- Sequence Model:       h = f( h, z, a )
- Embedder:             e = q( x )
- Encoder:              zprior ~ q ( zprior | h, e )
- Dynamics predictor    zpost ~ p ( zpost | h )
- Reward predictor:     r ~ p( z | h )
- Continue predictor:   c ~ p( z | h )
- Decoder:              x ~ p( x | h, z )
+    NOTE to myself.
+    RSSM equations
 
- During training z = zprior
- During prediction z = zpost
+    Sequence Model:       h = f( h, z, a )
+    Embedder:             e = q( x )
+    Encoder:              zprior ~ q ( zprior | h, e )
+    Dynamics predictor    zpost ~ p ( zpost | h )
+    Reward predictor:     r ~ p( z | h )
+    Continue predictor:   c ~ p( z | h )
+    Decoder:              x ~ p( x | h, z )
 
+    During training z = zprior
+    During prediction z = zpost
 """
 
 from typing import Any, Callable, Optional, Tuple
@@ -25,10 +25,11 @@ from flax.linen import initializers
 from noncleandreamer.ac import ACDreamer
 from noncleandreamer.custom_types import (
     ACLossInfo,
-    BaseDataType,
     RSSMLossInfo,
     RSSMState,
     Transition,
+    BaseDataType,
+    base_jnp_type
 )
 from noncleandreamer.distributions import MSE, Discrete, OneHotCategorical
 
@@ -46,16 +47,16 @@ class RecurrentCellwResets(nn.Module):
 
     @nn.compact
     def __call__(
-        self, carry: jnp.ndarray, inputs: jnp.ndarray, terminations: jnp.ndarray
+        self, carry: jnp.ndarray, inputs: jnp.ndarray, terminations: jnp.ndarray,
     ) -> Tuple[Tuple[jnp.ndarray, jnp.ndarray], jnp.ndarray]:
 
         xs = inputs
 
         if self.reset_on_termination:
-            carry = jax.tree_map(
+            carry = jax.tree.map(
                 lambda x: jnp.where(
                     terminations[:, jnp.newaxis],
-                    jax.tree_map(lambda y: jnp.zeros_like(y), tree=x),
+                    jax.tree.map(lambda y: jnp.zeros_like(y), tree=x),
                     x,
                 ),
                 carry,
@@ -65,7 +66,7 @@ class RecurrentCellwResets(nn.Module):
             self.hidden_dim,
             kernel_init=self.kernel_initializer,
             recurrent_kernel_init=self.recurrent_initializer,
-            dtype=jnp.float16,
+            dtype=base_jnp_type,
         )(carry, xs)
 
         return h_state, ys
@@ -94,10 +95,10 @@ class Prior(nn.Module):
         """Computes the forward pass for time step t for prior"""
 
         stochastic_state, deterministic_state = carry
-        agent_action, termination = x
+        prev_agent_action, termination = x
 
         inp = jnp.concatenate(
-            [agent_action.reshape(-1), stochastic_state.reshape(-1)], axis=0
+            [prev_agent_action.reshape(-1), stochastic_state.reshape(-1)], axis=0
         )
 
         latent_repr = self.latent_repr(inp)
@@ -150,26 +151,26 @@ class RSSM(nn.Module):
         self.deterministic_state = self.param(
             "deterministic_state", self.seq_init_fn_deter, 1
         )
-        self.imaginary_decoder = self.decoder_fn()
         self.prior = self.prior_fn()
+        self.imaginary_decoder = self.decoder_fn()
         self.posterior = self.posterior_fn()
 
-    def _mask(self, value: jax.Array, mask: jax.Array):
+    def _mask(self, value: jax.Array, mask: jax.Array) -> jnp.ndarray:
         # stolen
-        return value * mask.astype(jnp.bool)
+        return jnp.logical_and(value, mask.astype(jnp.bool))
 
     # @functools.partial(jax.jit, static_argnums=(1,))
     def initial_state(self, batch_size: int) -> RSSMState:
-        deterministic_state = jax.tree_map(
+        deterministic_state = jax.tree.map(
             lambda x: jnp.repeat(x, batch_size, axis=0), self.deterministic_state
         )
-        deterministic_state = jax.tree_map(
-            lambda x: jnp.tanh(x.astype(jnp.float16)), deterministic_state
+        deterministic_state = jax.tree.map(
+            lambda x: jnp.tanh(x.astype(base_jnp_type)), deterministic_state
         )
         logits = self.imaginary_decoder(self.prior.dec_fn(deterministic_state)).astype(
-            jnp.float16
+            base_jnp_type
         )
-        stochastic_state = self.distritbution(logits).mode().astype(jnp.float16)
+        stochastic_state = self.distritbution(logits).mode().astype(base_jnp_type)
 
         return RSSMState(
             logits=logits,
@@ -190,21 +191,24 @@ class RSSM(nn.Module):
 
         (stochastic_state, deterministic_state), seq_repr = self.prior(
             (stochastic_state, deterministic_state),
-            (action.astype(jnp.float16), termination),
+            (action.astype(base_jnp_type), termination),
         )
-        logits = self.imaginary_decoder(seq_repr)
+
+        logits = self.imaginary_decoder(seq_repr).astype(
+            base_jnp_type
+        )
 
         pred_dynamics_distribution = self.distritbution(logits)
 
         stochastic_state = (
-            pred_dynamics_distribution.sample(seed=rng).astype(jnp.float16).squeeze(0)
+            pred_dynamics_distribution.sample(seed=rng).astype(base_jnp_type).squeeze(0)
         )
 
         return RSSMState(
             logits=logits,
             stochastic_state=stochastic_state,
-            deterministic_state=jax.tree_map(
-                lambda x: x.astype(jnp.float16), deterministic_state
+            deterministic_state=jax.tree.map(
+                lambda x: x.astype(base_jnp_type), deterministic_state
             ),
         )
 
@@ -220,13 +224,13 @@ class RSSM(nn.Module):
         _, stochastic_state, deterministic_state = x
 
         initial_x = self.initial_state(1)
-        initial_x = jax.tree_map(lambda x: x[0], initial_x)
+        initial_x = jax.tree.map(lambda x: x[0], initial_x)
 
-        first = first.astype(jnp.float16)
-        action = action.astype(jnp.float16)
+        first = first.astype(base_jnp_type)
+        action = action.astype(base_jnp_type)
 
-        x, action = jax.tree_map(lambda x: self._mask(x, 1.0 - first), (x, action))
-        x = jax.tree_map(lambda _x, y: _x + self._mask(y, first), x, initial_x)
+        x, action = jax.tree.map(lambda x: self._mask(x, 1.0 - first), (x, action))
+        x = jax.tree.map(lambda _x, y: _x + self._mask(y, first), x, initial_x)
 
         prior_output = self.imagine_step(x, action, termination)
 
@@ -239,12 +243,12 @@ class RSSM(nn.Module):
 
         stochastic_state = (
             posterior_distribution.sample(seed=posterior_rng)
-            .astype(jnp.float16)
+            .astype(base_jnp_type)
             .squeeze(0)
         )
 
         posterior_output = RSSMState(
-            logits=posterior_seq_repr.astype(jnp.float16),
+            logits=posterior_seq_repr.astype(base_jnp_type),
             stochastic_state=stochastic_state,
             deterministic_state=deterministic_state,
         )
@@ -477,14 +481,14 @@ class WorldModelAgent(nn.Module):
 
         if rssm_state is None:
             rssm_state = self.initial_state_world_model(1)
-            rssm_state = jax.tree_map(lambda x: x[0], rssm_state)
+            rssm_state = jax.tree.map(lambda x: x[0], rssm_state)
 
         observation = observation.astype(jnp.float32)
         losses, rssm_state, posterior = self.world_model.loss(
             rssm_state, observation, action, reward, termination, first
         )
 
-        losses: RSSMLossInfo = jax.tree_map(lambda x: jnp.mean(x), losses)
+        losses: RSSMLossInfo = jax.tree.map(lambda x: jnp.mean(x), losses)
         total_loss = (
             losses.dyn_loss
             + losses.rep_loss
@@ -509,7 +513,7 @@ class WorldModelAgent(nn.Module):
 
         if rssm_state is None:
             rssm_state = self.initial_state_world_model(1)
-            rssm_state = (jax.tree_map(lambda x: x[0], rssm_state),)
+            rssm_state = (jax.tree.map(lambda x: x[0], rssm_state),)
 
         # Encode the observation.
         observation = observation.astype(jnp.float32)
@@ -537,10 +541,10 @@ class WorldModelAgent(nn.Module):
         return self.policy.compute_advantages(traj_batch)
 
     def critic_loss(
-        self, traj_batch: Transition, targets: jax.Array
+        self, traj_batch: Transition, traj_values: jax.Array, targets: jax.Array
     ) -> Tuple[jax.Array, Tuple]:
 
-        return self.policy.critic_loss(traj_batch, targets)
+        return self.policy.critic_loss(traj_batch, traj_values, targets)
 
     def actor_loss(
         self, traj_batch: Transition, advantages: jax.Array
@@ -565,7 +569,7 @@ class WorldModelAgent(nn.Module):
             entropy=actor_metric[1],
         )
 
-        return policy_loss, jax.tree_map(jnp.mean, loss_info)
+        return policy_loss, jax.tree.map(jnp.mean, loss_info)
 
     def update_policy(self):
         """Updates the policy."""
@@ -644,14 +648,14 @@ class SupervisedWorldModelAgent(nn.Module):
 
         if rssm_state is None:
             rssm_state = self.initial_state_world_model(1)
-            rssm_state = jax.tree_map(lambda x: x[0], rssm_state)
+            rssm_state = jax.tree.map(lambda x: x[0], rssm_state)
 
         observation = observation.astype(jnp.float32)
         losses, rssm_state, posterior = self.world_model.loss(
             rssm_state, observation, action, reward, termination, first
         )
 
-        losses: RSSMLossInfo = jax.tree_map(lambda x: jnp.mean(x), losses)
+        losses: RSSMLossInfo = jax.tree.map(lambda x: jnp.mean(x), losses)
         total_loss = (
             losses.dyn_loss
             + losses.rep_loss
@@ -674,7 +678,7 @@ class SupervisedWorldModelAgent(nn.Module):
 
         if rssm_state is None:
             rssm_state = self.initial_state_world_model(1)
-            rssm_state = (jax.tree_map(lambda x: x[0], rssm_state),)
+            rssm_state = (jax.tree.map(lambda x: x[0], rssm_state),)
 
         # Encode the observation.
         observation = observation.astype(jnp.float32)

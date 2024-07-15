@@ -19,7 +19,6 @@ from noncleandreamer.modules import (
     conv_encoder_model,
     head_fn,
     initializers,
-    latent_repr_fn,
     latent_repr_fn2,
     linear_decoder_model,
     linear_encoder_model,

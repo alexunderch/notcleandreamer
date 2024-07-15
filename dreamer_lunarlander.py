@@ -46,11 +46,11 @@ class GymEnv(gym.Wrapper):
         else:
             # Step the environment.
             obs, reward, terminated, truncated, info = super().step(action)
-            done = terminated
+            done = np.maximum(terminated, truncated)
             first = False
 
             # Update the statistics.
-            self._done = np.maximum(terminated, truncated)
+            self._done = done
             self._episode_return += reward
             self._episode_length += 1
 
@@ -149,9 +149,9 @@ def make_gymnasium_step_fn(
         rewards = []
         firsts = []
         metrics = {"episode_return": [], "episode_length": []}
-        transform = lambda x: x.reshape(
+        transform = lambda x: x.reshape( # noqa: E731
             config.num_envs, config.num_agents, *x.shape[1:]
-        )  # noqa: E731
+        )  
 
         observation, reward, done, first, info, action = data
         if rollout_len is None:
@@ -223,7 +223,7 @@ def evaluate(env, agent, config, eval_config: dict):
     env, env_specs = env
     metrics = {"episode_return": [], "episode_length": []}
     rollout_fn = make_gymnasium_step_fn(env, agent, config)
-    rssm_state = jax.tree_util.tree_map(
+    rssm_state = jax.tree.map(
         lambda x: x.reshape((config.num_envs, 1, *x.shape[1:])),
         agent.initial_state_world_model(config.num_envs),
     )
@@ -342,7 +342,7 @@ def main(cfg: DictConfig) -> None:
         None,
     )
 
-    rssm_state = jax.tree_util.tree_map(
+    rssm_state = jax.tree.map(
         lambda x: x.reshape((config.num_envs, config.num_agents, *x.shape[1:])),
         agent.initial_state_world_model(config.num_envs),
     )
@@ -375,6 +375,7 @@ def main(cfg: DictConfig) -> None:
     rng = jax.random.key(dict_config["seed"] + 1)
     rollout_len = 1  # dict_config["env_kwargs"]["max_episode_steps"]
     # Train
+    
     for step in range(1, int(dict_config["total_steps"]) + 1):
 
         rollout, env_data, rssm_state = rollout_fn(env_data, rssm_state, rollout_len)
@@ -382,7 +383,7 @@ def main(cfg: DictConfig) -> None:
         if not buffer_state.is_full.all():
             buffer_state = agent.replay_buffer.add(
                 buffer_state,
-                jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), rollout),
+                jax.tree.map(lambda x: jnp.swapaxes(x, 0, 1), rollout),
             )
 
         wandb.log({"step": step})
@@ -399,7 +400,7 @@ def main(cfg: DictConfig) -> None:
             wandb.log(
                 {
                     f"WM/{key}": m_value
-                    for key, m_value in jax.tree_map(jnp.mean, train_metric[0])
+                    for key, m_value in jax.tree.map(jnp.mean, train_metric[0])
                     ._asdict()
                     .items()
                 }
@@ -407,7 +408,7 @@ def main(cfg: DictConfig) -> None:
             wandb.log(
                 {
                     f"AC/{key}": m_value
-                    for key, m_value in jax.tree_map(jnp.mean, train_metric[1])
+                    for key, m_value in jax.tree.map(jnp.mean, train_metric[1])
                     ._asdict()
                     .items()
                 }

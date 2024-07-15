@@ -34,7 +34,7 @@ class PPODreamer(nn.Module):
     def _calculate_targets(
         traj_batch: Transition, values: jax.Array, gamma: float, lambda_: float
     ) -> jax.Array:
-        targets = rlax.lambda_returns(
+        targets = rlax.truncated_generalized_advantage_estimation(
             traj_batch.reward.astype(jnp.float32),
             gamma * (1.0 - traj_batch.termination[:-1]),
             values,
@@ -66,19 +66,23 @@ class PPODreamer(nn.Module):
     def compute_advantages(self, traj_batch: Transition) -> Tuple[jax.Array, jax.Array]:
 
         values = self.value(traj_batch.observation, None, None).value.mean()
-        values = values[:-1]
-
-        targets = self._calculate_targets(
-            traj_batch, values, self.config.gamma, self.config.lambda_
+        unnormalised_targets = self._calculate_targets(
+            traj_batch, values[1:], self.config.gamma, self.config.lambda_
         )
+        unnormalised_values = values[:-1]
+
+        if self.config.normalize_returns:
+            offset, inv_scale = self.normalizer(unnormalised_targets)
+            targets = (unnormalised_targets - offset) / inv_scale
+            values = (unnormalised_values - offset) / inv_scale
+        else:
+            targets = unnormalised_targets
+            values = unnormalised_values
 
         advantages = targets - values
 
-        if self.config.normalize_returns:
-            _, inv_scale = self.normalizer(targets)
-            advantages = (targets - values) / inv_scale
-
-        return advantages, targets
+        return advantages, unnormalised_values, unnormalised_targets
+    
 
     def _actor_loss_fn(
         self,
@@ -97,53 +101,33 @@ class PPODreamer(nn.Module):
         actor_output = self.actor(traj_obs, all_but_last(traj_batch.action))
         log_prob = actor_output.log_prob
 
-        # logratio = log_prob - all_but_last(traj_batch.log_prob)
-        #                 ratio = jnp.exp(logratio)
-        #                 gae = (gae - gae.mean()) / (gae.std() + 1e-8)
-        #                 loss_actor1 = ratio * gae
-        #                 loss_actor2 = (
-        #                     jnp.clip(
-        #                         ratio,
-        #                         1.0 - config["CLIP_EPS"],
-        #                         1.0 + config["CLIP_EPS"],
-        #                     )
-        #                     * gae
-        #                 )
-        #                 loss_actor = -jnp.minimum(loss_actor1, loss_actor2)
-        #                 loss_actor = loss_actor.mean()
-        #                 entropy = pi.entropy().mean()
-
-        #                 # debug
-        #                 approx_kl = ((ratio - 1) - logratio).mean()
-        #                 clip_frac = jnp.mean(jnp.abs(ratio - 1) > config["CLIP_EPS"])
-
-        #                 total_loss = (
-        #                     loss_actor
-        #                     + config["VF_COEF"] * value_loss
-        #                     - config["ENT_COEF"] * entropy
-        #                 )
-
-        loss_actor = -log_prob * jax.lax.stop_gradient(gae)
+        gae = (gae - gae.mean())/ (gae.std() + 1e-8)
+        logratio = log_prob - all_but_last(traj_batch.log_prob)
+        ratio = jnp.exp(logratio)
+        loss_actor1 = ratio * jax.lax.stop_gradient(gae)
+        loss_actor2 = (
+            jnp.clip(
+                ratio,
+                1.0 - self.config.clip_eps,
+                1.0 + self.config.clip_eps,
+            )
+            * jax.lax.stop_gradient(gae)
+        )
+        loss_actor = -jnp.minimum(loss_actor1, loss_actor2)
+        loss_actor = loss_actor.mean()
         entropy = actor_output.entropy
+
         weight = self.get_weight(
             all_but_last(1 - traj_batch.termination), self.config.gamma
         )
         total_loss_actor = weight * (loss_actor - self.config.ent_coeff * entropy)
-
-        # jax.debug.print(
-        #     "ACTOR {x}\t{y}\t{z}\t{t}",
-        #     x=gae.mean(),
-        #     y=log_prob.mean(),
-        #     z=loss_actor.mean(),
-        #     t=jnp.argmax(all_but_last(traj_batch.action), -1),
-        # )
-        # jax.debug.print("ACTOR {x}", x=jnp.argmax(all_but_last(traj_batch.action), -1))
 
         return total_loss_actor.mean(), (loss_actor.mean(), entropy.mean())
 
     def _critic_loss_fn(
         self,
         traj_batch: Transition,
+        traj_values: jax.Array,
         targets: jax.Array,
     ) -> Tuple:
 
@@ -154,17 +138,19 @@ class PPODreamer(nn.Module):
         values = self.critic(all_but_last(traj_obs)).value
         slow_values = self.slow_critic(all_but_last(traj_obs)).value.mean()
 
-        #  value_pred_clipped = traj_batch.value + (
-        #     value - traj_batch.value
-        # ).clip(-config["CLIP_EPS"], config["CLIP_EPS"])
-        # value_losses = jnp.square(value - targets)
-        # value_losses_clipped = jnp.square(value_pred_clipped - targets)
-        # value_loss = 0.5 * jnp.maximum(
-        #     value_losses, value_losses_clipped
-        # ).mean()
+        values = (values - values.mean())/ (values.std() + 1e-8)
+        slow_values = (slow_values - slow_values.mean())/ (slow_values.std() + 1e-8)
+        targets = (targets - targets.mean())/ (targets.std() + 1e-8)
+
+        value_pred_clipped = traj_values + (
+            -values.log_prob(jax.lax.stop_gradient(traj_values))
+        ).clip(-self.config.clip_eps, self.config.clip_eps)
+
+        value_losses = -values.log_prob(jax.lax.stop_gradient(targets))
+       
 
         # CALCULATE VALUE LOSS
-        value_loss = -values.log_prob(jax.lax.stop_gradient(targets))
+        value_loss = jnp.maximum(value_pred_clipped, value_losses)
         reg = -values.log_prob(jax.lax.stop_gradient(slow_values))
 
         weight = self.get_weight(
@@ -174,11 +160,11 @@ class PPODreamer(nn.Module):
         return critic_total_loss.mean(), (value_loss.mean(),)
 
     def critic_loss(
-        self, traj_batch: Transition, targets: jax.Array
+        self, traj_batch: Transition, traj_values: jax.Array, targets: jax.Array
     ) -> Tuple[jax.Array, Tuple]:
 
         # Calculate the critic loss.
-        critic_loss, critic_metric = self._critic_loss_fn(traj_batch, targets)
+        critic_loss, critic_metric = self._critic_loss_fn(traj_batch, traj_values, targets)
         return critic_loss, critic_metric
 
     def actor_loss(
