@@ -40,7 +40,7 @@ ADD ./requirements_gym.txt .
 ADD ./pyproject.toml .
 
 RUN pip install -r requirements.txt --ignore-installed && \
-    pip install -r requirements_gym.txt \
+    pip install -r requirements_gym.txt && \
     pip install tensorflow[and-cuda]==2.14 && \
     pip install --upgrade jax==0.4.25 jaxlib==0.4.25+cuda11.cudnn86 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html && \
     pip install -e .

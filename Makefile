@@ -1,6 +1,6 @@
 NVIDIA_SMI_TEST := $(shell nvidia-smi -L >> gpus.txt; wc -l < gpus.txt; rm gpus.txt)
 ifneq ($(NVIDIA_SMI_TEST), 0)
-GPUS=#--gpus all
+GPUS=--gpus all
 else
 GPUS=
 endif

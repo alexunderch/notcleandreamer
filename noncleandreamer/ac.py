@@ -132,10 +132,8 @@ class ACDreamer(nn.Module):
         values = self.critic(self.all_but_last(traj_obs)).value
         slow_values = self.slow_critic(self.all_but_last(traj_obs)).value.mean()
 
-
-        values = (values - values.mean())/ (values.std() + 1e-8)
-        slow_values = (slow_values - slow_values.mean())/ (slow_values.std() + 1e-8)
-        targets = (targets - targets.mean())/ (targets.std() + 1e-8)
+        # slow_values = (slow_values - slow_values.mean())/ (slow_values.std() + 1e-8)
+        # targets = (targets - targets.mean())/ (targets.std() + 1e-8)
 
         # CALCULATE VALUE LOSS
         value_loss = -values.log_prob(jax.lax.stop_gradient(targets))

@@ -715,7 +715,6 @@ class DreamerAgent:
 
         train_steps = self.should_train(step)
         for step in range(train_steps):
-            data = None
             if self.replay_buffer.can_sample(buffer_state):
 
                 data = self.replay_buffer.sample(buffer_state, rng).experience
