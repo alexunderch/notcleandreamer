@@ -334,14 +334,6 @@ def create_lin_rssm_model(
 
     prior_decoder_fn = head_fn(
         hidden_dims=[hidden_dim] * (base_ff_layers - 1),
-        output_dim=state_dim,
-        initializer=initializers.xavier_normal(),
-        activation_fn=nn.silu,
-        precision=Precision("default"),
-    )
-
-    rssm_proj = head_fn(
-        hidden_dims=[],
         output_dim=stoch_discrete_dim * stoch_discrete_dim,
         initializer=initializers.xavier_normal(),
         activation_fn=nn.silu,
@@ -402,7 +394,6 @@ def create_lin_rssm_model(
         rssm_fn(
             (_prior_init_fn, _prior_fn),
             _posterior_fn,
-            rssm_proj,
             state_dim,
             stoch_discrete_dim,
             num_categories,

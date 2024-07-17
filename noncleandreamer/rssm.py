@@ -89,7 +89,7 @@ class Prior(nn.Module):
     def setup(self) -> None:
         self.latent_repr = self.latent_repr_fn()
         self.seq_fn = self.sequential_proc_fn()
-        self.dec_fn = self.decoder_fn()
+        self.decoder = self.decoder_fn()
 
     def __call__(self, carry: Tuple[jax.Array, jax.Array], x: Tuple) -> Tuple:
         """Computes the forward pass for time step t for prior"""
@@ -107,7 +107,7 @@ class Prior(nn.Module):
             deterministic_state, latent_repr, termination
         )
 
-        seq_repr = self.dec_fn(deterministic_state)
+        seq_repr = self.decoder(deterministic_state)
 
         return (stochastic_state, deterministic_state), seq_repr
 
@@ -140,7 +140,6 @@ class Posterior(nn.Module):
 class RSSM(nn.Module):
     prior_fn: Callable
     posterior_fn: Callable
-    decoder_fn: Callable
     seq_init_fn_deter: Callable
     seq_init_fn_stoch: Callable
     discrete_dim: Optional[jax.Array]
@@ -152,7 +151,6 @@ class RSSM(nn.Module):
             "deterministic_state", self.seq_init_fn_deter, 1
         )
         self.prior = self.prior_fn()
-        self.imaginary_decoder = self.decoder_fn()
         self.posterior = self.posterior_fn()
 
     def _mask(self, value: jax.Array, mask: jax.Array) -> jnp.ndarray:
@@ -167,7 +165,7 @@ class RSSM(nn.Module):
         deterministic_state = jax.tree.map(
             lambda x: jnp.tanh(x.astype(base_jnp_type)), deterministic_state
         )
-        logits = self.imaginary_decoder(self.prior.dec_fn(deterministic_state)).astype(
+        logits = self.prior.decoder(deterministic_state).astype(
             base_jnp_type
         )
         stochastic_state = self.distritbution(logits).mode().astype(base_jnp_type)
@@ -194,7 +192,7 @@ class RSSM(nn.Module):
             (action.astype(base_jnp_type), termination),
         )
 
-        logits = self.imaginary_decoder(seq_repr).astype(
+        logits = seq_repr.astype(
             base_jnp_type
         )
 
@@ -783,7 +781,6 @@ def posterior_fn(latent_repr_fn: Callable, decoder_fn: Callable):
 def rssm_fn(
     prior_fns: Tuple[Callable, Callable],
     posterior_fn: Callable,
-    decoder_fn: Callable,
     state_dim: int,
     stochastic_state_state_dim: int,
     num_categories: int,
@@ -803,7 +800,6 @@ def rssm_fn(
         return RSSM(
             prior_fn,
             posterior_fn,
-            decoder_fn,
             prior_seq_init_fn,
             init_stochastic_state,
             stochastic_state_state_dim,

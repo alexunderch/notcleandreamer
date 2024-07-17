@@ -100,24 +100,12 @@ class ACDreamer(nn.Module):
         actor_output = self.actor(traj_obs, self.all_but_last(traj_batch.action))
         log_prob = actor_output.log_prob
 
-        gae = (gae - gae.mean())/ (gae.std() + 1e-8)
-
-
         loss_actor = -log_prob * jax.lax.stop_gradient(gae)
         entropy = actor_output.entropy
         weight = self.get_weight(
             self.all_but_last(1 - traj_batch.termination), self.config.gamma
         )
         total_loss_actor = weight * (loss_actor - self.config.ent_coeff * entropy)
-
-        # jax.debug.print(
-        #     "ACTOR {x}\t{y}\t{z}\t{t}",
-        #     x=gae.mean(),
-        #     y=log_prob.mean(),
-        #     z=loss_actor.mean(),
-        #     t=jnp.argmax(all_but_last(traj_batch.action), -1),
-        # )
-        # jax.debug.print("ACTOR {x}", x=jnp.argmax(all_but_last(traj_batch.action), -1))
 
         return total_loss_actor.mean(), (loss_actor.mean(), entropy.mean())
 
