@@ -155,7 +155,7 @@ class RSSM(nn.Module):
 
     def _mask(self, value: jax.Array, mask: jax.Array) -> jnp.ndarray:
         # stolen
-        return jnp.logical_and(value, mask.astype(jnp.bool))
+        return jnp.where((mask == 0), jnp.array(0), value) #value[mask.astype(jnp.bool)]
 
     # @functools.partial(jax.jit, static_argnums=(1,))
     def initial_state(self, batch_size: int) -> RSSMState:
