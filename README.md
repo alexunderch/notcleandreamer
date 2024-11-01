@@ -1,1 +1,4 @@
-# notcleandreamer
+# DreamerV2.5 impl
+
+FOR EDUCATIONAL PURPOSES ONLY
+STILL 90% DONE

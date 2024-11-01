@@ -28,6 +28,7 @@ def create_item_buffer(
     sample_batch_size: int,
     sample_sequence_length: int,
 ) -> fbx.trajectory_buffer.TrajectoryBuffer:
+    """Returns flashbax trajectory buffer"""
     return fbx.make_trajectory_buffer(
         max_length_time_axis=int(max_length),
         min_length_time_axis=min_length,
@@ -95,7 +96,6 @@ class DreamerAgent:
 
         # here we take only supervised learning part
         self.name = self.__class__.__name__
-        # self.num_vec_ens = config.num_envs * config.num_agents
         self.config = config
         self.rollout_fn = rollout_fn
 
@@ -168,7 +168,7 @@ class DreamerAgent:
             optax.adam(
                 learning_rate=config.policy_config.lr,
                 eps=1e-8,
-                # nesterov=True,
+                nesterov=True,
             ),
         )
         dynamic_scale = DynamicScale()
@@ -210,7 +210,7 @@ class DreamerAgent:
             optax.adam(
                 learning_rate=config.policy_config.lr,
                 eps=1e-5,
-                # nesterov=True,
+                nesterov=True,
             ),
         )
 
@@ -220,7 +220,7 @@ class DreamerAgent:
             optax.adam(
                 learning_rate=config.policy_config.lr,
                 eps=1e-5,
-                # nesterov=True,
+                nesterov=True,
             ),
         )
         actor_dynamic_scale, critic_dynamic_scale = DynamicScale(), DynamicScale()
@@ -368,7 +368,6 @@ class DreamerAgent:
         key = self.key
 
         # Run an imagination.
-
         actor_state, critic_state = self.policy_state
         params = {
             "policy": {**actor_state.params["policy"], **critic_state.params["policy"]},
@@ -662,8 +661,6 @@ class DreamerAgent:
         policy_state, policy_metric = self._train_policy(
             agent, policy_state, rngs, traj
         )
-        # if jnp.isinf(optax.global_norm(policy_metric.grad_norm)) or jnp.isnan(optax.global_norm(policy_metric.grad_norm)):
-        #     return
         # Update the policy state and key.
         self.policy_state = policy_state
         self.key = key

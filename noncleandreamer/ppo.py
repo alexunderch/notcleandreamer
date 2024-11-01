@@ -15,6 +15,7 @@ from noncleandreamer.custom_types import (
 )
 from noncleandreamer.distributions import Normalizer
 
+#TODO: add batching
 
 class PPODreamer(nn.Module):
 

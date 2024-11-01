@@ -12,6 +12,7 @@ base_jnp_type = jnp.float16
 
 
 class RSSMState(BaseDataType):
+    """RSSM state"""
     logits: jax.Array = None
     stochastic_state: jax.Array = None
     deterministic_state: jax.Array = None
